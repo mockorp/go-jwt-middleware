@@ -45,6 +45,18 @@ type Options struct {
 	// When set, all requests with the OPTIONS method will use authentication
 	// Default: false
 	EnableAuthOnOptions bool
+	// When set, only the issuers provided will be allowed.  This prevents accepting
+	// tokens issued by any provider who's keys are present on your server.  For example,
+	// you may only integrate with google auth and want to prevent users sending a JWT
+	// issued by Facebook from having access since you don't provide that functionality
+	// Don't accept the unexpected.
+	AllowedIssuers    []string
+	allowedIssuersMap map[string]struct{}
+	// When set, only allows the JWTs issued for the provided audience.  This is critical
+	// as is prevents a user for getting a JWT issued for another web site and using it
+	// to gain access to your page.  Only users with a JWT actually meant for your page
+	// should be allowed access.  This prevents token forwarding attacks
+	ExpectedAudience string
 	// When set, the middelware verifies that tokens are signed with the specific signing algorithm
 	// If the signing method is not constant the ValidationKeyGetter callback can be used to implement additional checks
 	// Important to avoid security issues described here: https://auth0.com/blog/2015/03/31/critical-vulnerabilities-in-json-web-token-libraries/
@@ -80,6 +92,13 @@ func New(options ...Options) *JWTMiddleware {
 
 	if opts.Extractor == nil {
 		opts.Extractor = FromAuthHeader
+	}
+
+	if opts.AllowedIssuers != nil && len(opts.AllowedIssuers) > 0 {
+		opts.allowedIssuersMap = make(map[string]struct{}, len(opts.AllowedIssuers))
+		for _, s := range slice {
+			set[s] = struct{}{}
+		}
 	}
 
 	return &JWTMiddleware{
@@ -216,6 +235,27 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 		m.logf("Error validating token algorithm: %s", message)
 		m.Options.ErrorHandler(w, r, errors.New(message).Error())
 		return fmt.Errorf("Error validating token algorithm: %s", message)
+	}
+
+	if m.Options.ExpectedAudience != "" && m.Options.ExpectedAudience != parsedToken.Header["aud"] {
+		message := fmt.Sprintf("Expected %s audience but token specified %s",
+			m.Options.ExpectedAudience,
+			parsedToken.Header["aud"])
+		m.logf("Error validating token audience %s", message)
+		m.Options.ErrorHandler(w, r, errors.New(message).Error())
+		return fmt.Errorf("Error validating token audience: %s", message)
+	}
+
+	if m.Options.allowedIssuersMap != nil {
+		if _, ok := m.Options.allowedIssuersMap[parsedToken.Header["iss"].(string)]; !ok {
+
+			message := fmt.Sprintf("Expected one of %s issuers but token specified %s",
+				m.Options.AllowedIssuers,
+				parsedToken.Header["iss"])
+			m.logf("Error validating token issuer %s", message)
+			m.Options.ErrorHandler(w, r, errors.New(message).Error())
+			return fmt.Errorf("Error validating token audience: %s", message)
+		}
 	}
 
 	// Check if the parsed token is valid...
