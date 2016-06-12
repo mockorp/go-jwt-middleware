@@ -103,6 +103,7 @@ func (m *JWTMiddleware) HandlerWithNext(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+//Wrap a handler function with JWT validation.  Helpful for securing individual methods.
 func (m *JWTMiddleware) HandlerFunc(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Let secure process the request. If it returns an error,
