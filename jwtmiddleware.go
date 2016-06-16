@@ -96,8 +96,8 @@ func New(options ...Options) *JWTMiddleware {
 
 	if opts.AllowedIssuers != nil && len(opts.AllowedIssuers) > 0 {
 		opts.allowedIssuersMap = make(map[string]struct{}, len(opts.AllowedIssuers))
-		for _, s := range slice {
-			set[s] = struct{}{}
+		for _, s := range opts.AllowedIssuers {
+			opts.allowedIssuersMap[s] = struct{}{}
 		}
 	}
 
@@ -220,7 +220,6 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 
 	// Now parse the token
 	parsedToken, err := jwt.Parse(token, m.Options.ValidationKeyGetter)
-
 	// Check if there was an error in parsing...
 	if err != nil {
 		m.logf("Error parsing token: %v", err)
@@ -237,21 +236,21 @@ func (m *JWTMiddleware) CheckJWT(w http.ResponseWriter, r *http.Request) error {
 		return fmt.Errorf("Error validating token algorithm: %s", message)
 	}
 
-	if m.Options.ExpectedAudience != "" && m.Options.ExpectedAudience != parsedToken.Header["aud"] {
+	if m.Options.ExpectedAudience != "" && m.Options.ExpectedAudience != parsedToken.Claims["aud"] {
 		message := fmt.Sprintf("Expected %s audience but token specified %s",
 			m.Options.ExpectedAudience,
-			parsedToken.Header["aud"])
+			parsedToken.Claims["aud"])
 		m.logf("Error validating token audience %s", message)
 		m.Options.ErrorHandler(w, r, errors.New(message).Error())
 		return fmt.Errorf("Error validating token audience: %s", message)
 	}
 
 	if m.Options.allowedIssuersMap != nil {
-		if _, ok := m.Options.allowedIssuersMap[parsedToken.Header["iss"].(string)]; !ok {
+		if _, ok := m.Options.allowedIssuersMap[parsedToken.Claims["iss"].(string)]; !ok {
 
 			message := fmt.Sprintf("Expected one of %s issuers but token specified %s",
 				m.Options.AllowedIssuers,
-				parsedToken.Header["iss"])
+				parsedToken.Claims["iss"])
 			m.logf("Error validating token issuer %s", message)
 			m.Options.ErrorHandler(w, r, errors.New(message).Error())
 			return fmt.Errorf("Error validating token audience: %s", message)
