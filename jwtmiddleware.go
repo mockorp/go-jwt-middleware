@@ -96,8 +96,8 @@ func New(options ...Options) *JWTMiddleware {
 
 	if opts.AllowedIssuers != nil && len(opts.AllowedIssuers) > 0 {
 		opts.allowedIssuersMap = make(map[string]struct{}, len(opts.AllowedIssuers))
-		for _, s := range slice {
-			set[s] = struct{}{}
+		for _, s := range opts.AllowedIssuers {
+			opts.allowedIssuersMap[s] = struct{}{}
 		}
 	}
 
