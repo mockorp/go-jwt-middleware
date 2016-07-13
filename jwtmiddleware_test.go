@@ -28,7 +28,7 @@ const userPropertyName = "custom-user-property"
 
 // the bytes read from the keys/sample-key file
 // private key generated with http://kjur.github.io/jsjws/tool_jwt.html
-var privateKey []byte = nil
+var privateKey []byte
 
 // TestUnauthenticatedRequest will perform requests with no Authorization header
 func TestUnauthenticatedRequest(t *testing.T) {
@@ -53,13 +53,13 @@ func TestAuthenticatedRequest(t *testing.T) {
 	}
 	Convey("Simple unauthenticated request", t, func() {
 		Convey("Authenticated GET to / path should return a 200 reponse", func() {
-			w := makeAuthenticatedRequest("GET", "/", map[string]interface{}{"foo": "bar"}, nil)
+			w := makeAuthenticatedRequest("GET", "/", jwt.MapClaims{"foo": "bar"}, nil, "", nil)
 			So(w.Code, ShouldEqual, http.StatusOK)
 		})
 		Convey("Authenticated GET to /protected path should return a 200 reponse if expected algorithm is not specified", func() {
 			var expectedAlgorithm jwt.SigningMethod
 			expectedAlgorithm = nil
-			w := makeAuthenticatedRequest("GET", "/protected", map[string]interface{}{"foo": "bar"}, expectedAlgorithm)
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar"}, expectedAlgorithm, "", nil)
 			So(w.Code, ShouldEqual, http.StatusOK)
 			responseBytes, err := ioutil.ReadAll(w.Body)
 			if err != nil {
@@ -71,7 +71,7 @@ func TestAuthenticatedRequest(t *testing.T) {
 		})
 		Convey("Authenticated GET to /protected path should return a 200 reponse if expected algorithm is correct", func() {
 			expectedAlgorithm := jwt.SigningMethodHS256
-			w := makeAuthenticatedRequest("GET", "/protected", map[string]interface{}{"foo": "bar"}, expectedAlgorithm)
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar"}, expectedAlgorithm, "", nil)
 			So(w.Code, ShouldEqual, http.StatusOK)
 			responseBytes, err := ioutil.ReadAll(w.Body)
 			if err != nil {
@@ -83,7 +83,7 @@ func TestAuthenticatedRequest(t *testing.T) {
 		})
 		Convey("Authenticated GET to /protected path should return a 401 reponse if algorithm is not expected one", func() {
 			expectedAlgorithm := jwt.SigningMethodRS256
-			w := makeAuthenticatedRequest("GET", "/protected", map[string]interface{}{"foo": "bar"}, expectedAlgorithm)
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar"}, expectedAlgorithm, "", nil)
 			So(w.Code, ShouldEqual, http.StatusUnauthorized)
 			responseBytes, err := ioutil.ReadAll(w.Body)
 			if err != nil {
@@ -96,11 +96,88 @@ func TestAuthenticatedRequest(t *testing.T) {
 	})
 }
 
-func makeUnauthenticatedRequest(method string, url string) *httptest.ResponseRecorder {
-	return makeAuthenticatedRequest(method, url, nil, nil)
+func TestExpectedValues(t *testing.T) {
+	var e error
+	privateKey, e = readPrivateKey()
+	if e != nil {
+		panic(e)
+	}
+
+	Convey("Validating Request", t, func() {
+		Convey("Authenticated GET to /protected path should return a 401 reponse if expected audience does not match", func() {
+			var expectedAlgorithm jwt.SigningMethod
+			expectedAlgorithm = nil
+			expectedAudience := "testAud"
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar"}, expectedAlgorithm, expectedAudience, nil)
+			So(w.Code, ShouldEqual, http.StatusUnauthorized)
+			_, err := ioutil.ReadAll(w.Body)
+			if err != nil {
+				panic(err)
+			}
+		})
+		Convey("Authenticated GET to /protected path should return a 200 reponse if expected audience does match", func() {
+			var expectedAlgorithm jwt.SigningMethod
+			expectedAlgorithm = nil
+			expectedAudience := "testAud"
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar", "aud": "testAud"}, expectedAlgorithm, expectedAudience, nil)
+			So(w.Code, ShouldEqual, http.StatusOK)
+			_, err := ioutil.ReadAll(w.Body)
+			if err != nil {
+				panic(err)
+			}
+		})
+		Convey("Authenticated GET to /protected path should return a 401 reponse if expected issuer does not match", func() {
+			var expectedAlgorithm jwt.SigningMethod
+			expectedAlgorithm = nil
+			expectedIssuers := []string{
+				"issuer1",
+				"issuer2",
+			}
+
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar", "iss": "issuer3"}, expectedAlgorithm, "", expectedIssuers)
+			So(w.Code, ShouldEqual, http.StatusUnauthorized)
+			_, err := ioutil.ReadAll(w.Body)
+			if err != nil {
+				panic(err)
+			}
+		})
+		Convey("Authenticated GET to /protected path should return a 401 reponse if expected issuer is absent", func() {
+			var expectedAlgorithm jwt.SigningMethod
+			expectedAlgorithm = nil
+			expectedIssuers := []string{
+				"issuer1",
+				"issuer2",
+			}
+
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar"}, expectedAlgorithm, "", expectedIssuers)
+			So(w.Code, ShouldEqual, http.StatusUnauthorized)
+			_, err := ioutil.ReadAll(w.Body)
+			if err != nil {
+				panic(err)
+			}
+		})
+		Convey("Authenticated GET to /protected path should return a 200 reponse if expected issuer does match", func() {
+			var expectedAlgorithm jwt.SigningMethod
+			expectedAlgorithm = nil
+			expectedIssuers := []string{
+				"issuer1",
+				"issuer2",
+			}
+			w := makeAuthenticatedRequest("GET", "/protected", jwt.MapClaims{"foo": "bar", "iss": "issuer2"}, expectedAlgorithm, "", expectedIssuers)
+			So(w.Code, ShouldEqual, http.StatusOK)
+			_, err := ioutil.ReadAll(w.Body)
+			if err != nil {
+				panic(err)
+			}
+		})
+	})
 }
 
-func makeAuthenticatedRequest(method string, url string, c map[string]interface{}, expectedSignatureAlgorithm jwt.SigningMethod) *httptest.ResponseRecorder {
+func makeUnauthenticatedRequest(method string, url string) *httptest.ResponseRecorder {
+	return makeAuthenticatedRequest(method, url, nil, nil, "", nil)
+}
+
+func makeAuthenticatedRequest(method string, url string, c jwt.Claims, expectedSignatureAlgorithm jwt.SigningMethod, expectedAudience string, allowedIssuers []string) *httptest.ResponseRecorder {
 	r, _ := http.NewRequest(method, url, nil)
 	if c != nil {
 		token := jwt.New(jwt.SigningMethodHS256)
@@ -113,12 +190,12 @@ func makeAuthenticatedRequest(method string, url string, c map[string]interface{
 		r.Header.Set(defaultAuthorizationHeaderName, fmt.Sprintf("bearer %v", s))
 	}
 	w := httptest.NewRecorder()
-	n := createNegroniMiddleware(expectedSignatureAlgorithm)
+	n := createNegroniMiddleware(expectedSignatureAlgorithm, expectedAudience, allowedIssuers)
 	n.ServeHTTP(w, r)
 	return w
 }
 
-func createNegroniMiddleware(expectedSignatureAlgorithm jwt.SigningMethod) *negroni.Negroni {
+func createNegroniMiddleware(expectedSignatureAlgorithm jwt.SigningMethod, expectedAudience string, allowedIssuers []string) *negroni.Negroni {
 	// create a gorilla mux router for public requests
 	publicRouter := mux.NewRouter().StrictSlash(true)
 	publicRouter.Methods("GET").
@@ -140,7 +217,7 @@ func createNegroniMiddleware(expectedSignatureAlgorithm jwt.SigningMethod) *negr
 	// negroni handler for api request
 	negProtected := negroni.New()
 	//add the JWT negroni handler
-	negProtected.Use(negroni.HandlerFunc(JWT(expectedSignatureAlgorithm).HandlerWithNext))
+	negProtected.Use(negroni.HandlerFunc(JWT(expectedSignatureAlgorithm, expectedAudience, allowedIssuers).HandlerWithNext))
 	negProtected.UseHandler(protectedRouter)
 
 	//Create the main router
@@ -162,7 +239,7 @@ func createNegroniMiddleware(expectedSignatureAlgorithm jwt.SigningMethod) *negr
 }
 
 // JWT creates the middleware that parses a JWT encoded token
-func JWT(expectedSignatureAlgorithm jwt.SigningMethod) *JWTMiddleware {
+func JWT(expectedSignatureAlgorithm jwt.SigningMethod, expectedAudience string, allowedIssuers []string) *JWTMiddleware {
 	return New(Options{
 		Debug:               false,
 		CredentialsOptional: false,
@@ -177,7 +254,9 @@ func JWT(expectedSignatureAlgorithm jwt.SigningMethod) *JWTMiddleware {
 			}
 			return privateKey, nil
 		},
-		SigningMethod: expectedSignatureAlgorithm,
+		SigningMethod:    expectedSignatureAlgorithm,
+		ExpectedAudience: expectedAudience,
+		AllowedIssuers:   allowedIssuers,
 	})
 }
 
@@ -199,7 +278,7 @@ func protectedHandler(w http.ResponseWriter, r *http.Request) {
 	// retrieve the token from the context (Gorilla context lib)
 	u := context.Get(r, userPropertyName)
 	user := u.(*jwt.Token)
-	respondJson(user.Claims["foo"].(string), w)
+	respondJSON(user.Claims.(jwt.MapClaims)["foo"].(string), w)
 }
 
 // Response quick n' dirty Response struct to be encoded as json
@@ -208,7 +287,7 @@ type Response struct {
 }
 
 // respondJson will take an string to write through the writer as json
-func respondJson(text string, w http.ResponseWriter) {
+func respondJSON(text string, w http.ResponseWriter) {
 	response := Response{text}
 
 	jsonResponse, err := json.Marshal(response)
