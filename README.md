@@ -132,6 +132,17 @@ type Options struct {
   // When set, all requests with the OPTIONS method will use authentication
   // Default: false
   EnableAuthOnOptions bool,
+	// When set, only the issuers provided will be allowed.  This prevents accepting
+	// tokens issued by any provider who's keys are present on your server.  For example,
+	// you may only integrate with google auth and want to prevent users sending a JWT
+	// issued by Facebook from having access since you don't provide that functionality
+	// Don't accept the unexpected.
+	AllowedIssuers    []string
+	// When set, only allows the JWTs issued for the provided audience.  This is critical
+	// as is prevents a user for getting a JWT issued for another web site and using it
+	// to gain access to your page.  Only users with a JWT actually meant for your page
+	// should be allowed access.  This prevents token forwarding attacks
+	ExpectedAudience string
   // When set, the middelware verifies that tokens are signed with the specific signing algorithm
   // If the signing method is not constant the ValidationKeyGetter callback can be used to implement additional checks
   // Important to avoid security issues described here: https://auth0.com/blog/2015/03/31/critical-vulnerabilities-in-json-web-token-libraries/
